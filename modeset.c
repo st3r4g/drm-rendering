@@ -6,7 +6,7 @@
 #include <errno.h>
 
 #include <xf86drm.h>
-//#include <xf86drmMode.h>
+#include <xf86drmMode.h>
 
 int modeset_open(const char *node)
 {
@@ -33,5 +33,21 @@ int modeset_open(const char *node)
 int main()
 {
 	int fd;
-	return modeset_open("/dev/dri/card0");
+	drmModeRes *res;
+
+	fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+	if (fd == -1) {
+		perror("E");
+		return -1;
+	}
+
+	res = drmModeGetResources(fd);
+	fprintf(stdout, "%i\n", res);
+
+	if (close(fd == -1)) {
+		perror("E");
+		return -1;
+	}
+
+	return 0;
 }
