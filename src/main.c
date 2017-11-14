@@ -1,7 +1,9 @@
-#include <session.h>
-#include <drm.h>
-#include <egl.h>
+#include <mysession.h>
+#include <mydrm.h>
+#include <myegl.h>
 
 int main() {
-	return init_session();
+	struct session_info_t *session_info = create_session_info();
+	destroy_session_info(session_info);
+	return 0;
 }
