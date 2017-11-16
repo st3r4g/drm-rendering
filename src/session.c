@@ -38,11 +38,13 @@ int take_device(struct session_info_t *S, const char *path) {
 		goto end1;
 	}
 
+	return fd;
+
 end1:
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
 end0:
-	return ret < 0 ? EXIT_FAILURE : fd;
+	return EXIT_FAILURE;
 }
 
 struct session_info_t *create_session_info() {
@@ -56,36 +58,62 @@ struct session_info_t *create_session_info() {
 
 	session_info->id = NULL;
 	session_info->seat = NULL;
+	session_info->bus = NULL;
 
 	ret = sd_pid_get_session(0, &session_info->id);
 	if (ret < 0) {
 		fprintf(stderr, "err: %s\n", strerror(-ret));
-		goto end;
+		destroy_session_info(session_info);
+		return NULL;
 	}
 	printf("session id: %s\n", session_info->id);
 
 	ret = sd_session_get_vt(session_info->id, &session_info->vt);
 	if (ret < 0) {
 		fprintf(stderr, "err: %s\n", strerror(-ret));
-		goto end;
+		destroy_session_info(session_info);
+		return NULL;
 	}
 	printf("session vt: %i\n", session_info->vt);
 
 	ret = sd_session_get_seat(session_info->id, &session_info->seat);
 	if (ret < 0) {
 		fprintf(stderr, "err: %s\n", strerror(-ret));
-		goto end;
+		destroy_session_info(session_info);
+		return NULL;
 	}
 	printf("session seat: %s\n", session_info->seat);
 
-end:
-	free(session_info->seat);
-	free(session_info->id);
-
-	return ret < 0 ? NULL : session_info;
+	ret = sd_bus_default_system(&session_info->bus);
+	if (ret < 0) {
+		fprintf(stderr, "err: %s\n", strerror(-ret));
+		destroy_session_info(session_info);
+		return NULL;
+	}
+	
+	sd_bus_message *msg = NULL;
+	sd_bus_error error = SD_BUS_ERROR_NULL;
+	ret = sd_bus_call_method(session_info->bus, "org.freedesktop.login1",
+	"/org/freedesktop/login1", "org.freedesktop.login1.Manager", "GetSession",
+	&error, &msg, "s", session_info->id);
+	if (ret < 0) {
+		fprintf(stderr, "err: %s\n", strerror(-ret));
+		sd_bus_error_free(&error);
+		destroy_session_info(session_info);
+		return NULL;
+	}
+	const char *obj = NULL;
+	ret = sd_bus_message_read(msg, "o", &obj);
+	session_info->object = strdup(obj);
+	sd_bus_message_unref(msg);
+	
+	return session_info;
 }
 
 int destroy_session_info(struct session_info_t *session_info) {
+	sd_bus_unref(session_info->bus);
+	free(session_info->seat);
+	free(session_info->id);
 	free(session_info);
 	return 0;
 }
