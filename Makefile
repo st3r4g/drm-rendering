@@ -19,7 +19,7 @@ $(ODIR)/%.o: $(SDIR)/%.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS) -I/usr/include/libdrm
 
 main: $(OBJ)
-	$(CC) -o $@ $^ -lsystemd -ldrm -lEGL
+	$(CC) -o $@ $^ -lsystemd -ldrm -lgbm -lEGL
 
 .PHONY: clean
 
