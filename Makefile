@@ -1,5 +1,5 @@
-_DEPS=mysession.h mydrm.h
-_OBJ=main.o session.o drm.o
+_DEPS=mysession.h mydrm.h myegl.h
+_OBJ=main.o session.o drm.o egl.o
 
 CC=gcc
 

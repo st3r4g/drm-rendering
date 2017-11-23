@@ -2,31 +2,19 @@
 #include <mydrm.h>
 #include <myegl.h>
 
-#include <assert.h>
-#include <fcntl.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <unistd.h>
-
-#include <gbm.h>
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
+//TODO: msg containing gpu fd is not unref
 
 int main() {
-//	bool res;
+	struct session_info_t *session_info = create_session_info();
 
-/*	struct gbm_device *gbm = gbm_create_device(fd);
-	assert(gbm != NULL);
+	take_control(session_info);
+	int fd = take_device(session_info, "/dev/dri/card0");
 
-	EGLDisplay egl_dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_MESA, gbm,
-	NULL);
+	display_info(fd);
 
-	assert(egl_dpy != NULL);
+	release_device(session_info, fd);
+	release_control(session_info);
 
-	res = eglInitialize(egl_dpy, NULL, NULL);
-	assert(res);
-*/
-	display_info("/dev/dri/card0");
-	display_info("/dev/dri/card1");
+	destroy_session_info(session_info);
 	return 0;
 }
