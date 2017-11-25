@@ -9,6 +9,7 @@ struct session_info_t {
 	char *seat;
 	sd_bus *bus;
 	char *object;
+	sd_bus_message *TD_msg; //TODO: find better solution
 };
 
 struct session_info_t *create_session_info();

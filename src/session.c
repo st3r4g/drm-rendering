@@ -16,7 +16,6 @@
 int take_device(struct session_info_t *S, const char *path) {
 	int ret;
 	struct stat st;
-	sd_bus_message *msg = NULL;
 	sd_bus_error error = SD_BUS_ERROR_NULL;
 	int fd, paused;
 
@@ -27,14 +26,14 @@ int take_device(struct session_info_t *S, const char *path) {
 	}
 
 	ret = sd_bus_call_method(S->bus, "org.freedesktop.login1", S->object,
-	"org.freedesktop.login1.Session", "TakeDevice", &error, &msg, "uu",
+	"org.freedesktop.login1.Session", "TakeDevice", &error, &S->TD_msg, "uu",
 	major(st.st_rdev), minor(st.st_rdev));
 	if (ret < 0) {
 		fprintf(stderr, "ERR on TakeDevice(%s): %s\n", path, error.message);
 		goto end;
 	}
 
-	ret = sd_bus_message_read(msg, "hb", &fd, &paused);
+	ret = sd_bus_message_read(S->TD_msg, "hb", &fd, &paused);
 	if (ret < 0) {
 		fprintf(stderr, "ERR on message_read(%s): %s\n", path, strerror(-ret));
 	}
@@ -42,7 +41,6 @@ int take_device(struct session_info_t *S, const char *path) {
 
 end:
 	sd_bus_error_free(&error);
-//	sd_bus_message_unref(msg); fd seems to be closed when msg is unref
 
 	return ret < 0 ? EXIT_FAILURE : fd;
 }
@@ -70,6 +68,7 @@ int release_device(struct session_info_t *S, int fd) {
 end:
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
+	sd_bus_message_unref(S->TD_msg); //TODO: find better solution
 
 	return ret < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
@@ -118,6 +117,7 @@ struct session_info_t *create_session_info() {
 	session_info->id = NULL;
 	session_info->seat = NULL;
 	session_info->bus = NULL;
+	session_info->TD_msg = NULL;
 
 	ret = sd_pid_get_session(0, &session_info->id);
 	if (ret < 0) {
