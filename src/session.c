@@ -13,31 +13,65 @@
 #include <systemd/sd-login.h>
 #include <systemd/sd-bus.h>
 
-int take_device(struct session_info_t *S, const char *path) {
+#include <libudev.h>
+
+void get_boot_gpu(int *major, int *minor) {
+	struct udev* udev = udev_new();
+	if (udev == NULL) {
+		fprintf(stderr, "udev_new failed");
+	}
+
+	struct udev_enumerate *udev_enum = udev_enumerate_new(udev);
+	if (udev_enum == NULL) {
+		fprintf(stderr, "udev_enumerate_new failed");
+	}
+
+	udev_enumerate_add_match_subsystem(udev_enum, "drm");
+	udev_enumerate_add_match_sysname(udev_enum, "card[0-9]");
+	udev_enumerate_scan_devices(udev_enum);
+
+	struct udev_list_entry *entry;
+	udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(udev_enum)) {
+		const char *syspath = udev_list_entry_get_name(entry);
+		struct udev_device *gpu = udev_device_new_from_syspath(udev, syspath);
+		printf("Found gpu: %s\n", udev_device_get_sysname(gpu)); 
+
+		struct udev_device *pci =
+		udev_device_get_parent_with_subsystem_devtype(gpu, "pci", NULL);
+
+		const char *boot = udev_device_get_sysattr_value(pci, "boot_vga");
+		if (strcmp(boot, "1") == 0) {
+			*major = atoi(udev_device_get_property_value(gpu, "MAJOR"));
+			*minor = atoi(udev_device_get_property_value(gpu, "MINOR"));
+			printf("using this gpu for rendering\n");
+			udev_device_unref(gpu);
+			break;
+		}
+		udev_device_unref(gpu);
+	}
+	udev_enumerate_unref(udev_enum);
+	udev_unref(udev);
+}
+
+int take_device(struct session_info_t *S, int major, int minor) {
 	int ret;
-	struct stat st;
 	sd_bus_error error = SD_BUS_ERROR_NULL;
 	int fd, paused;
 
-	ret = stat(path, &st);
-	if (ret < 0) {
-		fprintf(stderr, "ERR on stat(%s): %s\n", path, strerror(errno));
-		goto end;
-	}
-
+	printf("%i, %i\n", major, minor);
 	ret = sd_bus_call_method(S->bus, "org.freedesktop.login1", S->object,
 	"org.freedesktop.login1.Session", "TakeDevice", &error, &S->TD_msg, "uu",
-	major(st.st_rdev), minor(st.st_rdev));
+	major, minor);
 	if (ret < 0) {
-		fprintf(stderr, "ERR on TakeDevice(%s): %s\n", path, error.message);
+		fprintf(stderr, "ERR on TakeDevice: %s\n", error.message);
 		goto end;
 	}
 
 	ret = sd_bus_message_read(S->TD_msg, "hb", &fd, &paused);
 	if (ret < 0) {
-		fprintf(stderr, "ERR on message_read(%s): %s\n", path, strerror(-ret));
+		fprintf(stderr, "ERR on message_read: %s\n", strerror(-ret));
 	}
-	printf("%s opened, paused: %i\n", path, paused);
+	printf("opened, paused: %i\n", paused);
 
 end:
 	sd_bus_error_free(&error);

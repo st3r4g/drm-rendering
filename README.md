@@ -1,3 +1,3 @@
 # KMS Rendering
 
-Performs glClear(), but still segfaults on EGL context destruction...
+Performs a blue glClear

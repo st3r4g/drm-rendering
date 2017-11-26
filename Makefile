@@ -15,13 +15,18 @@ DEPS=$(patsubst %,$(IDIR)/%,$(_DEPS))
 
 OBJ=$(patsubst %,$(ODIR)/%,$(_OBJ))
 
-$(ODIR)/%.o: $(SDIR)/%.c $(DEPS)
+
+$(ODIR)/%.o: $(SDIR)/%.c $(DEPS) $(ODIR)
 	$(CC) -c -o $@ $< $(CFLAGS) -I/usr/include/libdrm
 
 main: $(OBJ)
-	$(CC) -o $@ $^ -lsystemd -ldrm -lgbm -lEGL -lGLESv2
+	$(CC) -o $@ $^ -ludev -lsystemd -ldrm -lgbm -lEGL -lGLESv2
+
+$(ODIR):
+	mkdir $(ODIR)
 
 .PHONY: clean
 
 clean:
-	rm -f main $(ODIR)/*.o
+	rm main $(ODIR)/*.o
+	rm -d $(ODIR)

@@ -12,13 +12,15 @@ struct session_info_t {
 	sd_bus_message *TD_msg; //TODO: find better solution
 };
 
+void get_boot_gpu(int *major, int *minor);
+
 struct session_info_t *create_session_info();
 int destroy_session_info(struct session_info_t *session_info);
 
 int take_control(struct session_info_t *session_info);
 int release_control(struct session_info_t *session_info);
 
-int take_device(struct session_info_t *session_info, const char *path);
+int take_device(struct session_info_t *session_info, int major, int minor);
 int release_device(struct session_info_t *session_info, int fd);
 
 #endif

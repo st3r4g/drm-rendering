@@ -73,6 +73,14 @@ void destroy_framebuffer(struct info2_t *info2) {
 	gbm_device_destroy(info2->gbm);
 }
 
+void free_fb(struct gbm_bo *bo, void *data) {
+	uint32_t *id_ptr = data;
+	struct gbm_device *gbm = gbm_bo_get_device(bo);
+	printf("id2: %i\n", *id_ptr);
+	drmModeRmFB(gbm_device_get_fd(gbm), *id_ptr);
+	free(id_ptr);
+}
+
 int display(struct info_t *info, int fd, struct info2_t *info2) {
 	int ret;
 	info2->bo = gbm_surface_lock_front_buffer(info2->surf);
@@ -82,31 +90,35 @@ int display(struct info_t *info, int fd, struct info2_t *info2) {
 	}
 	printf("\ngbm_surface_lock_front_buffer successful\n");
 
-	uint32_t fb_id;
 	uint32_t width = gbm_bo_get_width(info2->bo);
 	uint32_t height = gbm_bo_get_height(info2->bo);
 	uint32_t handle = gbm_bo_get_handle(info2->bo).u32;
 	uint32_t stride = gbm_bo_get_stride(info2->bo);
-	ret = drmModeAddFB(fd, width, height, 24, 32, stride, handle, &fb_id);
+	uint32_t *fb_id = malloc(sizeof(uint32_t));
+	ret = drmModeAddFB(fd, width, height, 24, 32, stride, handle, fb_id);
 	if (ret) {
 		printf("drmModeAddFB failed\n");
 	}
 	printf("drmModeAddFB successful\n");
 		
-	ret = drmModeSetCrtc(fd, info->crtc_id, fb_id, 0, 0, &info->connector_id, 1,
+	ret = drmModeSetCrtc(fd, info->crtc_id, *fb_id, 0, 0, &info->connector_id, 1,
 	&info->mode);
 	if (ret) {
 		printf("drmModeSetCrtc failed\n");
 	}
 	printf("drmModeSetCrtc successful\n");
 
-	sleep(3);
+	sleep(1);
 
 /*	ret = drmModeRmFB(fd, fb_id);
 	if (ret) {
 		printf("drmModeRmFB failed\n");
 	}
 	printf("drmModeRmFB successful\n");*/
+
+	printf("id1: %i\n", *fb_id);
+
+	gbm_bo_set_user_data(info2->bo, fb_id, free_fb);
 
 	return 0;
 }
