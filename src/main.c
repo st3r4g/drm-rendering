@@ -2,7 +2,7 @@
 
 #include <mysession.h>
 #include <mydrm.h>
-#include <myegl.h>
+#include <myrenderer.h>
 
 #include <stdlib.h>
 

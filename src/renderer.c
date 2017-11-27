@@ -1,4 +1,4 @@
-#include <myegl.h>
+#include <myrenderer.h>
 
 #include <GLES2/gl2.h>
 

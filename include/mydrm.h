@@ -12,7 +12,7 @@ struct drm_info_t {
 	drmModeModeInfo mode;
 };
 
-#include <myegl.h>
+#include <myrenderer.h>
 
 struct drm_info_t *display_info(int fd);
 
