@@ -7,7 +7,7 @@ IDIR=include
 SDIR=src
 ODIR=obj
 
-OPTS=-std=c11 -Wall -Wextra -Werror -pedantic-errors
+OPTS=-std=c11 -Wall -Wextra -Werror -pedantic-errors -Wno-unused
 
 CFLAGS=$(OPTS) -I$(IDIR)
 

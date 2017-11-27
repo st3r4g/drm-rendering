@@ -1,18 +1,26 @@
 #ifndef MYEGL_H
 #define MYEGL_H
 
-#include <mydrm.h>
-
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <gbm.h>
 
-struct egl_info_t {
+struct renderer_info_t {
 	EGLDisplay dpy;
 	EGLContext ctx;
-	EGLSurface surf;
+	EGLSurface surf_egl;
+
+	struct gbm_device *gbm;
+	struct gbm_surface *surf_gbm;
+	struct gbm_bo *bo;
 };
 
-struct egl_info_t *create_gles_context(struct info2_t *info2);
-int destroy_gles_context(struct egl_info_t *egl_info, struct info2_t *info2);
+#include <mydrm.h>
+
+struct renderer_info_t *create_renderer(struct drm_info_t *drm_info, int fd);
+
+int render();
+
+int destroy_renderer(struct renderer_info_t *renderer_info);
 
 #endif

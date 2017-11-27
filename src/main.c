@@ -14,16 +14,15 @@ int main() {
 	take_control(session_info);
 	int fd = take_device(session_info, major, minor);
 
-	struct info_t *info = display_info(fd);
-	struct info2_t *info2 = create_framebuffer(info, fd);
+	struct drm_info_t *drm_info = display_info(fd);
 
-	struct egl_info_t *egl_info = create_gles_context(info2);
+	struct renderer_info_t *renderer_info = create_renderer(drm_info, fd);
 
-	display(info, fd, info2);
+	drm_modeset(drm_info, renderer_info, fd);
 
-	destroy_gles_context(egl_info, info2);
-	
-	destroy_framebuffer(info2);
+	destroy_renderer(renderer_info);
+
+	drm_cleanup(drm_info, fd);
 
 	release_device(session_info, fd);
 	release_control(session_info);

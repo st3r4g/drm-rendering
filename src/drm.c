@@ -41,68 +41,34 @@ const char *conn_get_connection(drmModeConnection connection) {
 	}
 }
 
-struct info2_t *create_framebuffer(struct info_t *info, int fd) {
-	struct info2_t *info2 = malloc(sizeof(*info2));
-
-	info2->gbm = gbm_create_device(fd);
-	if (info2->gbm == NULL) {
-		fprintf(stderr, "gbm_create_device failed\n");
-	}
-	printf("\ngbm_create_device successful\n");
-
-	int ret = gbm_device_is_format_supported(info2->gbm, GBM_BO_FORMAT_XRGB8888,
-	GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-	if (!ret) {
-		fprintf(stderr, "format unsupported\n");
-		return NULL;
-	}
-	printf("format supported\n");
-
-	info2->surf = gbm_surface_create(info2->gbm, info->mode.hdisplay,
-	info->mode.vdisplay, GBM_BO_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT |
-	GBM_BO_USE_RENDERING);
-	if (info2->surf == NULL) {
-		fprintf(stderr, "gbm_surface_create failed\n");
-	}
-	printf("gbm_surface_create successful\n");
-
-	return info2;
-}
-
-void destroy_framebuffer(struct info2_t *info2) {
-	gbm_device_destroy(info2->gbm);
-}
-
-void free_fb(struct gbm_bo *bo, void *data) {
-	uint32_t *id_ptr = data;
-	struct gbm_device *gbm = gbm_bo_get_device(bo);
-	printf("id2: %i\n", *id_ptr);
-	drmModeRmFB(gbm_device_get_fd(gbm), *id_ptr);
-	free(id_ptr);
-}
-
-int display(struct info_t *info, int fd, struct info2_t *info2) {
+int drm_modeset(struct drm_info_t *Di, struct renderer_info_t *Ri, int fd) {
 	int ret;
-	info2->bo = gbm_surface_lock_front_buffer(info2->surf);
-	if (info2->bo == NULL) {
+	Ri->bo = gbm_surface_lock_front_buffer(Ri->surf_gbm);
+	if (Ri->bo == NULL) {
 		fprintf(stderr, "gbm_surface_lock_front_buffer failed\n");
 		return -1;
 	}
 	printf("\ngbm_surface_lock_front_buffer successful\n");
 
-	uint32_t width = gbm_bo_get_width(info2->bo);
-	uint32_t height = gbm_bo_get_height(info2->bo);
-	uint32_t handle = gbm_bo_get_handle(info2->bo).u32;
-	uint32_t stride = gbm_bo_get_stride(info2->bo);
-	uint32_t *fb_id = malloc(sizeof(uint32_t));
-	ret = drmModeAddFB(fd, width, height, 24, 32, stride, handle, fb_id);
+	uint32_t width = gbm_bo_get_width(Ri->bo);
+	uint32_t height = gbm_bo_get_height(Ri->bo);
+	uint32_t handles[4] = {gbm_bo_get_handle(Ri->bo).u32};
+	uint32_t pitches[4] = {gbm_bo_get_stride(Ri->bo)};
+	uint32_t offsets[4] = {gbm_bo_get_offset(Ri->bo, 0)};
+	uint32_t format = gbm_bo_get_format(Ri->bo);
+//	uint32_t handle = gbm_bo_get_handle(info2->bo).u32;
+//	uint32_t stride = gbm_bo_get_stride(info2->bo);
+//	ret = drmModeAddFB(fd, width, height, 24, 32, stride, handle, fb_id);
+	ret = drmModeAddFB2(fd, width, height, format, handles, pitches, offsets,
+	&Di->fb_id, 0);
+
 	if (ret) {
 		printf("drmModeAddFB failed\n");
 	}
 	printf("drmModeAddFB successful\n");
 		
-	ret = drmModeSetCrtc(fd, info->crtc_id, *fb_id, 0, 0, &info->connector_id, 1,
-	&info->mode);
+	ret = drmModeSetCrtc(fd, Di->crtc_id, Di->fb_id, 0, 0, &Di->connector_id, 1,
+	&Di->mode);
 	if (ret) {
 		printf("drmModeSetCrtc failed\n");
 	}
@@ -110,43 +76,42 @@ int display(struct info_t *info, int fd, struct info2_t *info2) {
 
 	sleep(1);
 
-/*	ret = drmModeRmFB(fd, fb_id);
+	ret = drmModeSetCrtc(fd, Di->crtc_id, Di->old_fb_id, 0, 0, &Di->connector_id, 1,
+	&Di->mode);
 	if (ret) {
-		printf("drmModeRmFB failed\n");
+		printf("drmModeSetCrtc failed\n");
 	}
-	printf("drmModeRmFB successful\n");*/
-
-	printf("id1: %i\n", *fb_id);
-
-	gbm_bo_set_user_data(info2->bo, fb_id, free_fb);
-
+	printf("drmModeSetCrtc successful\n");
+	
 	return 0;
 }
 
-struct info_t *display_info(int fd)
+struct drm_info_t *display_info(int fd)
 {
 	drmModeRes *res;
-	int n_conn;
 	uint32_t type;
 
-	struct info_t *const info = malloc(sizeof(*info));
+	struct drm_info_t *const I = malloc(sizeof(*I));
 
 	res = drmModeGetResources(fd);
 	if (res == NULL) {
 		fprintf(stderr, "drmModeGetResources failed\n");
 		return NULL;
 	}
-	
-	n_conn = res->count_connectors;
 
-	for (int i=0; i<n_conn; ++i) {
+	for (int i=0; i<res->count_connectors; ++i) {
 		drmModeConnector *conn = drmModeGetConnector(fd, res->connectors[i]);
 		if (conn->connection == DRM_MODE_CONNECTED) {
 			drmModeEncoder *enc = drmModeGetEncoder(fd, conn->encoder_id);
-			info->crtc_id = enc->crtc_id;
-			info->connector_id = conn->connector_id;
+			I->crtc_id = enc->crtc_id;
+			I->connector_id = conn->connector_id;
 			type = conn->connector_type;
-			info->mode = conn->modes[0];
+			I->mode = conn->modes[0];
+
+			drmModeCrtc *crtc = drmModeGetCrtc(fd, I->crtc_id);
+			I->old_fb_id = crtc->buffer_id;
+
+			drmModeFreeCrtc(crtc);
 			drmModeFreeEncoder(enc);
 			drmModeFreeConnector(conn);
 			break;
@@ -155,42 +120,12 @@ struct info_t *display_info(int fd)
 	}
 
 	drmModeFreeResources(res);
+	printf("Running on %s %s\n", conn_get_name(type), I->mode.name);
+	return I;
+}
 
-	printf("crtc_id: %"PRIu32"\n", info->crtc_id);
-	printf("connector_id: %"PRIu32" (%s)\n", info->connector_id,
-	conn_get_name(type));
-	printf("mode: %s\n", info->mode.name);
-
-	return info;
-/*	printf("Scanning connectors:\n");
-	for (int i=0; i<n_conn; ++i) {
-		drmModeConnector *conn = drmModeGetConnector(fd, res->connectors[i]);
-		printf("encoder_id: %"PRIu32"\n", conn->encoder_id);
-		printf("connector_type: %s\n", conn_get_name(conn->connector_type));
-		printf("status: %s\n", conn_get_connection(conn->connection));
-		printf("n_enc: %i\n", conn->count_encoders);
-
-		printf("count_modes: %i\n", conn->count_modes);
-		for (int j=0; j<conn->count_modes; ++j) {
-			printf("	%s\n", conn->modes[i].name);
-		}
-		drmModeFreeConnector(conn);
-	}
-
-	printf("Scanning encoders:\n");
-	for (int i=0; i<n_enc; i++) {
-		drmModeEncoder *enc = drmModeGetEncoder(fd, res->encoders[i]);
-		printf("encoder_id: %"PRIu32"\n", enc->encoder_id);
-		printf("encoder_type: %"PRIu32"\n", enc->encoder_type);
-		printf("crtc_id: %"PRIu32"\n", enc->crtc_id);
-		drmModeFreeEncoder(enc);
-	}
-
-	printf("Scanning crtcs:\n");
-	for (int i=0; i<n_crtc; ++i) {
-		drmModeCrtc *crtc = drmModeGetCrtc(fd, res->crtcs[i]);
-		printf("crtc_id: %"PRIu32"\n", crtc->crtc_id);
-		printf("mode: %s valid: %i\n", crtc->mode.name, crtc->mode_valid);
-		drmModeFreeCrtc(crtc);
-	}*/
+int drm_cleanup(struct drm_info_t *Di, int fd) {
+	drmModeRmFB(fd, Di->fb_id);
+	free(Di);
+	return 0;
 }
