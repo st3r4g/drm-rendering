@@ -12,7 +12,13 @@ struct renderer_info_t {
 
 	struct gbm_device *gbm;
 	struct gbm_surface *surf_gbm;
-	struct gbm_bo *bo;
+	struct gbm_bo *bo[2];
+	int n_bo;
+
+	uint32_t width;
+	uint32_t height;
+	uint32_t handle;
+	uint32_t stride;
 };
 
 #include <mydrm.h>

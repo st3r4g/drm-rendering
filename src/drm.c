@@ -42,25 +42,10 @@ const char *conn_get_connection(drmModeConnection connection) {
 }
 
 int drm_modeset(struct drm_info_t *Di, struct renderer_info_t *Ri, int fd) {
-	int ret;
-	Ri->bo = gbm_surface_lock_front_buffer(Ri->surf_gbm);
-	if (Ri->bo == NULL) {
-		fprintf(stderr, "gbm_surface_lock_front_buffer failed\n");
-		return -1;
-	}
-	printf("\ngbm_surface_lock_front_buffer successful\n");
-
-	uint32_t width = gbm_bo_get_width(Ri->bo);
-	uint32_t height = gbm_bo_get_height(Ri->bo);
-	uint32_t handles[4] = {gbm_bo_get_handle(Ri->bo).u32};
-	uint32_t pitches[4] = {gbm_bo_get_stride(Ri->bo)};
-	uint32_t offsets[4] = {gbm_bo_get_offset(Ri->bo, 0)};
-	uint32_t format = gbm_bo_get_format(Ri->bo);
-//	uint32_t handle = gbm_bo_get_handle(info2->bo).u32;
-//	uint32_t stride = gbm_bo_get_stride(info2->bo);
-//	ret = drmModeAddFB(fd, width, height, 24, 32, stride, handle, fb_id);
-	ret = drmModeAddFB2(fd, width, height, format, handles, pitches, offsets,
-	&Di->fb_id, 0);
+/*	int ret;
+	
+	ret = drmModeAddFB(fd, Ri->width, Ri->height, 24, 32, Ri->stride,
+	Ri->handle, &Di->fb_id);
 
 	if (ret) {
 		printf("drmModeAddFB failed\n");
@@ -73,16 +58,61 @@ int drm_modeset(struct drm_info_t *Di, struct renderer_info_t *Ri, int fd) {
 		printf("drmModeSetCrtc failed\n");
 	}
 	printf("drmModeSetCrtc successful\n");
+*/
+	return 0;
+}
 
-	sleep(1);
+static void page_flip_event_handler(int fd, unsigned int frame, unsigned int
+sec, unsigned int usec, void *data) {
+}
 
-	ret = drmModeSetCrtc(fd, Di->crtc_id, Di->old_fb_id, 0, 0, &Di->connector_id, 1,
+int drm_handle_event(int fd) {
+	drmEventContext ev;
+	ev.version = 2;
+	ev.page_flip_handler = page_flip_event_handler;
+	drmHandleEvent(fd, &ev);
+	return 0;
+}
+
+int drm_pageflip(struct drm_info_t *Di, struct renderer_info_t *Ri, int fd) {
+	if (Di->n_fb_id == 2) {
+		drmModeRmFB(fd, Di->fb_id[0]);
+		Di->n_fb_id--;
+		Di->fb_id[0] = Di->fb_id[1];
+	}
+
+	int ret = drmModeAddFB(fd, Ri->width, Ri->height, 24, 32, Ri->stride,
+	Ri->handle, &Di->fb_id[Di->n_fb_id]);
+	if (ret) {
+		printf("drmModeAddFB failed\n");
+	}
+	Di->n_fb_id++;
+	
+	if (Di->n_fb_id == 1) {
+		ret = drmModeSetCrtc(fd, Di->crtc_id, Di->fb_id[Di->n_fb_id-1], 0, 0, 
+		&Di->connector_id, 1, &Di->mode);
+		if (ret) {
+			printf("drmModeSetCrtc failed\n");
+		}
+		printf("drmModeSetCrtc successful\n");
+	} else {
+		drmModePageFlip(fd, Di->crtc_id, Di->fb_id[Di->n_fb_id-1],
+		DRM_MODE_PAGE_FLIP_EVENT, NULL);
+		if (ret) {
+			printf("drmModePageFlip failed\n");
+		}
+	}
+
+	return 0;
+}
+
+int drm_restore(struct drm_info_t *Di, int fd) {
+	int ret = drmModeSetCrtc(fd, Di->crtc_id, Di->old_fb_id, 0, 0, &Di->connector_id, 1,
 	&Di->mode);
 	if (ret) {
 		printf("drmModeSetCrtc failed\n");
 	}
 	printf("drmModeSetCrtc successful\n");
-	
 	return 0;
 }
 
@@ -92,6 +122,7 @@ struct drm_info_t *display_info(int fd)
 	uint32_t type;
 
 	struct drm_info_t *const I = malloc(sizeof(*I));
+	I->n_fb_id = 0;
 
 	res = drmModeGetResources(fd);
 	if (res == NULL) {
@@ -120,12 +151,13 @@ struct drm_info_t *display_info(int fd)
 	}
 
 	drmModeFreeResources(res);
-	printf("Running on %s %s\n", conn_get_name(type), I->mode.name);
+	printf("Running on %s@%s\n", conn_get_name(type), I->mode.name);
 	return I;
 }
 
 int drm_cleanup(struct drm_info_t *Di, int fd) {
-	drmModeRmFB(fd, Di->fb_id);
+	drmModeRmFB(fd, Di->fb_id[0]);
+	drmModeRmFB(fd, Di->fb_id[1]);
 	free(Di);
 	return 0;
 }

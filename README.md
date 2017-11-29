@@ -1,3 +1,3 @@
 # KMS Rendering
 
-Performs a blue glClear
+Simple GBM based rendering

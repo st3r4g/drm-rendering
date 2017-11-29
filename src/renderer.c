@@ -39,12 +39,13 @@ const EGLint attrib_required[] = {
 //	EGL_NATIVE_VISUAL_TYPE, ? 
 EGL_NONE};
 
-// `private` functions definitions
+// `private` declarations 
 int create_memory_buffer(struct renderer_info_t *Ri, struct drm_info_t *Di, int fd); 
 int create_renderer_context(struct renderer_info_t *Ri);
 
 struct renderer_info_t *create_renderer(struct drm_info_t *Di, int fd) {
 	struct renderer_info_t *Ri = malloc(sizeof(*Ri));
+	Ri->n_bo = 0;
 	create_memory_buffer(Ri, Di, fd);
 	create_renderer_context(Ri);
 	return Ri;
@@ -120,17 +121,56 @@ int create_renderer_context(struct renderer_info_t *Ri) {
 		fprintf(stderr, "eglMakeCurrent failed\n");
 	}
 	printf("eglMakeCurrent successful\n");
+		
+	return 0;
+}
 
-	glClearColor(0, 0, 1, 1);
+int render(struct renderer_info_t *Ri, int secs) {
+	switch (secs % 3) {
+	case 0:
+		glClearColor(1, 0, 0, 1);
+		break;
+	case 1:
+		glClearColor(0, 1, 0, 1);
+		break;
+	case 2:
+		glClearColor(0, 0, 1, 1);
+		break;
+	}
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	if (eglSwapBuffers(Ri->dpy, Ri->surf_egl) == EGL_FALSE) {
 		fprintf(stderr, "eglSwapBuffers failed\n");
 	}
-	printf("eglSwapBuffers successful\n");
-		
+
+	if (Ri->n_bo == 2) {
+		gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo[0]);
+		Ri->n_bo--;
+		Ri->bo[0] = Ri->bo[1];
+	}
+
+	Ri->bo[Ri->n_bo] = gbm_surface_lock_front_buffer(Ri->surf_gbm);
+	if (Ri->bo[Ri->n_bo] == NULL) {
+		fprintf(stderr, "gbm_surface_lock_front_buffer failed\n");
+		return -1;
+	}
+	Ri->n_bo++;
+
+/*	uint32_t handles[4] = {gbm_bo_get_handle(Ri->bo).u32};
+	uint32_t pitches[4] = {gbm_bo_get_stride(Ri->bo)};
+	uint32_t offsets[4] = {gbm_bo_get_offset(Ri->bo, 0)};
+	uint32_t format = gbm_bo_get_format(Ri->bo);
+	ret = drmModeAddFB2(fd, width, height, format, handles, pitches, offsets,
+	&Di->fb_id, 0);*/
+
+	Ri->width = gbm_bo_get_width(Ri->bo[Ri->n_bo-1]);
+	Ri->height = gbm_bo_get_height(Ri->bo[Ri->n_bo-1]);
+	Ri->handle = gbm_bo_get_handle(Ri->bo[Ri->n_bo-1]).u32;
+	Ri->stride = gbm_bo_get_stride(Ri->bo[Ri->n_bo-1]);
+
 	return 0;
 }
+	
 
 int destroy_renderer(struct renderer_info_t *Ri) {
 	if (eglMakeCurrent(Ri->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT) == EGL_FALSE) {
@@ -138,7 +178,9 @@ int destroy_renderer(struct renderer_info_t *Ri) {
 	}
 	printf("eglMakeCurrent successful\n");
 	
-	gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo);
+	gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo[0]);
+	gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo[1]);
+	Ri->n_bo = 0;
 	printf("surf: %i\n", eglDestroySurface(Ri->dpy, Ri->surf_egl));
 	gbm_surface_destroy(Ri->surf_gbm);
 
