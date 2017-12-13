@@ -20,7 +20,7 @@ $(ODIR)/%.o: $(SDIR)/%.c $(DEPS) $(ODIR)
 	$(CC) -c -o $@ $< $(CFLAGS) -I/usr/include/libdrm
 
 main: $(OBJ)
-	$(CC) -o $@ $^ -ludev -lsystemd -ldrm -lgbm -lEGL -lGLESv2
+	$(CC) -o $@ $^ -lm -ludev -lsystemd -ldrm -lgbm -lEGL -lGLESv2
 
 $(ODIR):
 	mkdir $(ODIR)
