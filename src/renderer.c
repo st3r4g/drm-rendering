@@ -1,5 +1,7 @@
-#include <myrenderer.h>
+#include <renderer.h>
 
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES3/gl32.h>
 
 #include <assert.h>
@@ -10,6 +12,12 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+struct _renderer {
+	EGLDisplay dpy;
+	EGLContext ctx;
+	EGLSurface surf;
+};
 
 const char *get_error(EGLint error_code) {
 	switch (error_code) {
@@ -44,44 +52,6 @@ const EGLint attrib_required[] = {
 	EGL_NATIVE_VISUAL_ID, GBM_FORMAT_XRGB8888,
 //	EGL_NATIVE_VISUAL_TYPE, ? 
 EGL_NONE};
-
-// `private` declarations 
-int create_memory_buffer(struct renderer_info_t *Ri, struct drm_info_t *Di, int fd); 
-int create_renderer_context(struct renderer_info_t *Ri);
-
-struct renderer_info_t *create_renderer(struct drm_info_t *Di, int fd) {
-	struct renderer_info_t *Ri = malloc(sizeof(*Ri));
-	Ri->n_bo = 0;
-	create_memory_buffer(Ri, Di, fd);
-	create_renderer_context(Ri);
-	return Ri;
-}
-
-int create_memory_buffer(struct renderer_info_t *Ri, struct drm_info_t *Di, int fd) {
-	Ri->gbm = gbm_create_device(fd);
-	if (Ri->gbm == NULL) {
-		fprintf(stderr, "gbm_create_device failed\n");
-	}
-	printf("\ngbm_create_device successful\n");
-
-	int ret = gbm_device_is_format_supported(Ri->gbm, GBM_BO_FORMAT_XRGB8888,
-	GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-	if (!ret) {
-		fprintf(stderr, "format unsupported\n");
-		return -1;
-	}
-	printf("format supported\n");
-
-	Ri->surf_gbm= gbm_surface_create(Ri->gbm, Di->mode.hdisplay,
-	Di->mode.vdisplay, GBM_BO_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT |
-	GBM_BO_USE_RENDERING);
-	if (Ri->surf_gbm == NULL) {
-		fprintf(stderr, "gbm_surface_create failed\n");
-	}
-	printf("gbm_surface_create successful\n");
-
-	return 0;
-}
 
 struct model {
 	GLuint vao;
@@ -193,17 +163,18 @@ void RotateX(GLfloat theta, GLfloat *matrix)
 	matrix[6] = 0.0f, matrix[7] = sin(theta), matrix[8] = cos(theta);
 }
 
-int create_renderer_context(struct renderer_info_t *Ri) {
-	EGLint major, minor;
+renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
+	renderer *state = malloc(sizeof(renderer));
 
-	Ri->dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_MESA, Ri->gbm, NULL);
-	Ri->ctx = EGL_NO_CONTEXT;
-	if (Ri->dpy == EGL_NO_DISPLAY) {
+	state->dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_MESA, gbm, NULL);
+	state->ctx = EGL_NO_CONTEXT;
+	if (state->dpy == EGL_NO_DISPLAY) {
 		fprintf(stderr, "eglGetPlatformDisplay failed\n");
 	}
 	printf("\nEGL\neglGetPlatformDisplay successful\n");
 
-	if (eglInitialize(Ri->dpy, &major, &minor) == EGL_FALSE) {
+	EGLint major, minor;
+	if (eglInitialize(state->dpy, &major, &minor) == EGL_FALSE) {
 		fprintf(stderr, "eglInitialize failed\n");
 	}
 	printf("eglInitialize successful (EGL %i.%i)\n", major, minor);
@@ -217,28 +188,28 @@ int create_renderer_context(struct renderer_info_t *Ri) {
 	const int size = 1;
 	int matching;
 	EGLConfig *config = malloc(size*sizeof(EGLConfig));
-	eglChooseConfig(Ri->dpy, attrib_required, config, size, &matching);
+	eglChooseConfig(state->dpy, attrib_required, config, size, &matching);
 	printf("EGLConfig matching: %i (requested: %i)\n", matching, size);
 	
 	const EGLint attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
 	
-	Ri->ctx = eglCreateContext(Ri->dpy, *config, EGL_NO_CONTEXT, attribs);
-	if (Ri->ctx == EGL_NO_CONTEXT) {
+	state->ctx = eglCreateContext(state->dpy, *config, EGL_NO_CONTEXT, attribs);
+	if (state->ctx == EGL_NO_CONTEXT) {
 		fprintf(stderr, "eglGetCreateContext failed\n");
 	}
 	printf("eglCreateContext successful\n");
-	Ri->surf_egl = eglCreatePlatformWindowSurface(Ri->dpy, *config, Ri->surf_gbm, NULL);
-	if (Ri->surf_egl == EGL_NO_SURFACE) {
+	state->surf = eglCreatePlatformWindowSurface(state->dpy, *config, surf, NULL);
+	if (state->surf == EGL_NO_SURFACE) {
 		fprintf(stderr, "eglCreatePlatformWindowSurface failed\n");
 	}
 	printf("eglCreatePlatformWindowSurface successful\n");
 
-	if (eglMakeCurrent(Ri->dpy, Ri->surf_egl, Ri->surf_egl, Ri->ctx) == EGL_FALSE) {
+	if (eglMakeCurrent(state->dpy, state->surf, state->surf, state->ctx) == EGL_FALSE) {
 		fprintf(stderr, "eglMakeCurrent failed\n");
 	}
 	printf("eglMakeCurrent successful\n");
 
-	GLuint vert = glCreateShader(GL_VERTEX_SHADER);
+/*	GLuint vert = glCreateShader(GL_VERTEX_SHADER);
 	GLuint frag = glCreateShader(GL_FRAGMENT_SHADER);
 	char *vert_src_handle = GetShaderSource("shaders/simple.vert");
 	char *frag_src_handle = GetShaderSource("shaders/simple.frag");
@@ -277,7 +248,6 @@ int create_renderer_context(struct renderer_info_t *Ri) {
 	free(frag_src_handle);
 	glUseProgram(prog);
 
-	glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
 	
 	sphere = make_sphere(0.5, 50, 50);
 	
@@ -297,77 +267,46 @@ int create_renderer_context(struct renderer_info_t *Ri) {
 	triangle.n_elem = 18;
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), 0);
 	glEnableVertexAttribArray(0);
-	glBindVertexArray(0);
+	glBindVertexArray(0);*/
 
-	glEnable(GL_DEPTH_TEST);
-
-	return 0;
+	glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+	return state;
 }
 
-int render(struct renderer_info_t *Ri, int secs) {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+int renderer_render(renderer* state, int secs) {
+	glClear(GL_COLOR_BUFFER_BIT);
 
-	glUseProgram(prog);
+/*	glUseProgram(prog);
 	GLfloat rot[9];
 	RotateX(M_PI/8*secs, rot);
 	glUniformMatrix3fv(1, 1, GL_TRUE, rot);
 	glBindVertexArray(sphere.vao);
 	glDrawElements(GL_TRIANGLES, sphere.n_elem, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
-
-	if (eglSwapBuffers(Ri->dpy, Ri->surf_egl) == EGL_FALSE) {
+	glBindVertexArray(0);*/
+	
+	if (eglSwapBuffers(state->dpy, state->surf) == EGL_FALSE) {
 		fprintf(stderr, "eglSwapBuffers failed\n");
 	}
 
-	if (Ri->n_bo == 2) {
-		gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo[0]);
-		Ri->n_bo--;
-		Ri->bo[0] = Ri->bo[1];
-	}
-
-	Ri->bo[Ri->n_bo] = gbm_surface_lock_front_buffer(Ri->surf_gbm);
-	if (Ri->bo[Ri->n_bo] == NULL) {
-		fprintf(stderr, "gbm_surface_lock_front_buffer failed\n");
-		return -1;
-	}
-	Ri->n_bo++;
-
-/*	uint32_t handles[4] = {gbm_bo_get_handle(Ri->bo).u32};
-	uint32_t pitches[4] = {gbm_bo_get_stride(Ri->bo)};
-	uint32_t offsets[4] = {gbm_bo_get_offset(Ri->bo, 0)};
-	uint32_t format = gbm_bo_get_format(Ri->bo);
-	ret = drmModeAddFB2(fd, width, height, format, handles, pitches, offsets,
-	&Di->fb_id, 0);*/
-
-	Ri->width = gbm_bo_get_width(Ri->bo[Ri->n_bo-1]);
-	Ri->height = gbm_bo_get_height(Ri->bo[Ri->n_bo-1]);
-	Ri->handle = gbm_bo_get_handle(Ri->bo[Ri->n_bo-1]).u32;
-	Ri->stride = gbm_bo_get_stride(Ri->bo[Ri->n_bo-1]);
-
 	return 0;
 }
-	
 
-int destroy_renderer(struct renderer_info_t *Ri) {
-	if (eglMakeCurrent(Ri->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT) == EGL_FALSE) {
+int renderer_destroy(renderer *state) {
+	if (eglMakeCurrent(state->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT) == EGL_FALSE) {
 		fprintf(stderr, "eglMakeCurrent failed\n");
 	}
 	printf("eglMakeCurrent successful\n");
-	
-	gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo[0]);
-	gbm_surface_release_buffer(Ri->surf_gbm, Ri->bo[1]);
-	Ri->n_bo = 0;
-	printf("surf: %i\n", eglDestroySurface(Ri->dpy, Ri->surf_egl));
-	gbm_surface_destroy(Ri->surf_gbm);
+
+	printf("surf: %i\n", eglDestroySurface(state->dpy, state->surf));
 
 	if (eglMakeCurrent(EGL_NO_DISPLAY, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT) == EGL_FALSE) {
 		fprintf(stderr, "eglMakeCurrent failed\n");
 	}
 	printf("eglMakeCurrent successful\n");
 
-	printf("ctx: %i\n", eglDestroyContext(Ri->dpy, Ri->ctx));
-	printf("dpy: %i\n", eglTerminate(Ri->dpy));
-	gbm_device_destroy(Ri->gbm);
-	free(Ri);
+	printf("ctx: %i\n", eglDestroyContext(state->dpy, state->ctx));
+	printf("dpy: %i\n", eglTerminate(state->dpy));
+
+	free(state);
 	return 0;
 }

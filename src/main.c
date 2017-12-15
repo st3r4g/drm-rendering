@@ -1,66 +1,69 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include <mysession.h>
-#include <mydrm.h>
-#include <myrenderer.h>
+#include <backend.h>
+#include <renderer.h>
 
-#include <stdio.h>
+#include <stdio.h> //printf
 #include <stdlib.h>
-#include <sys/select.h>
-#include <time.h>
+#include <sys/epoll.h> //epoll
+#include <time.h> //time
 
 int main() {
-	int major, minor;
-	get_boot_gpu(&major, &minor);
-	struct session_info_t *session_info = create_session_info();
+	drm* drm_state = drm_create();
+	input* input_state = input_create();
 
-	take_control(session_info);
-	int fd = take_device(session_info, major, minor);
+	int gpu_fd = drm_get_fd(drm_state);
+	int input_fd = input_get_fd(input_state);
 
-	struct drm_info_t *drm_info = display_info(fd);
+	renderer* renderer_state = renderer_create(drm_get_gbm(drm_state),
+	drm_get_surf(drm_state));
 
-	struct renderer_info_t *renderer_info = create_renderer(drm_info, fd);
+	renderer_render(renderer_state, 0);
+	drm_pageflip(drm_state);
+
+	int epfd = epoll_create(1);
+
+	struct epoll_event input_event_ctl;
+	input_event_ctl.data.fd = input_fd;
+	input_event_ctl.events = EPOLLIN;
+	epoll_ctl(epfd, EPOLL_CTL_ADD, input_fd, &input_event_ctl);
+	
+	struct epoll_event gpu_event_ctl;
+	gpu_event_ctl.data.fd = gpu_fd;
+	gpu_event_ctl.events = EPOLLIN;
+	epoll_ctl(epfd, EPOLL_CTL_ADD, gpu_fd, &gpu_event_ctl);
+	
+	struct epoll_event *events;
+	const int maxevents = 32;
+	events = malloc(maxevents*sizeof(*events));
+
+	renderer_render(renderer_state, 0);
+	drm_pageflip(drm_state);
 
 	time_t start, cur;
 	time(&start);
 
-	render(renderer_info, 0);
+	for (;;) {
+		int n = epoll_wait(epfd, events, maxevents, -1);
 
-	drm_pageflip(drm_info, renderer_info, fd);
-	
-	while (time(&cur)-start < 5) {
-		fd_set fds;
-		struct timeval timeout = { .tv_sec = 3, .tv_usec = 0 };
-
-		FD_ZERO(&fds);
-		FD_SET(0, &fds);
-		FD_SET(fd, &fds);
-
-		render(renderer_info, cur-start);
-		drm_pageflip(drm_info, renderer_info, fd);
-
-		int ret = select(fd+1, &fds, NULL, NULL, &timeout); //POLL
-
-		if (ret <= 0) {
-			fprintf(stderr, "select timed out or error %d\n", ret);
+		if (n < 0)
 			continue;
-		} else if (FD_ISSET(0, &fds)) {
-			break;
+		for (int i=0; i<n; i++) {
+			if (events[i].data.fd == input_fd) {
+				if (input_handle_event(input_state) == 1)
+					goto end;
+			} else if (events[i].data.fd == gpu_fd) {
+				renderer_render(renderer_state, 0);
+				drm_handle_event(drm_state);
+			}
 		}
-		
-		drm_handle_event(fd);
 	}
 
-	drm_restore(drm_info, fd);
+end:
+	renderer_destroy(renderer_state);
 
-	destroy_renderer(renderer_info);
-
-	drm_cleanup(drm_info, fd);
-
-	release_device(session_info, fd);
-	release_control(session_info);
-
-	destroy_session_info(session_info);
+	input_destroy(input_state);
+	drm_destroy(drm_state);
 
 	return EXIT_SUCCESS;
 }

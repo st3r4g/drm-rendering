@@ -1,5 +1,5 @@
-_DEPS=mysession.h mydrm.h myrenderer.h
-_OBJ=main.o session.o drm.o renderer.o
+_DEPS=session.h backend.h renderer.h
+_OBJ=main.o session.o backend.o renderer.o
 
 CC=gcc
 
@@ -20,7 +20,7 @@ $(ODIR)/%.o: $(SDIR)/%.c $(DEPS) $(ODIR)
 	$(CC) -c -o $@ $< $(CFLAGS) -I/usr/include/libdrm
 
 main: $(OBJ)
-	$(CC) -o $@ $^ -lm -ludev -lsystemd -ldrm -lgbm -lEGL -lGLESv2
+	$(CC) -o $@ $^ -lm -ludev -linput -lsystemd -ldrm -lgbm -lEGL -lGLESv2
 
 $(ODIR):
 	mkdir $(ODIR)

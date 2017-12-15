@@ -1,18 +1,22 @@
 #define _POSIX_C_SOURCE 200809L
 
-#include <mysession.h>
+#include <session.h>
 
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <fcntl.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
+#include <sys/epoll.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 
 #include <systemd/sd-login.h>
 #include <systemd/sd-bus.h>
 
+#include <libinput.h>
 #include <libudev.h>
 
 void get_boot_gpu(int *major, int *minor) {
@@ -139,6 +143,41 @@ int release_control(struct session_info_t *S) {
 	return ret < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+static int open_restricted(const char *path, int flags, void *user_data)
+{
+	int fd = open(path, flags);
+
+	if (fd < 0)
+		fprintf(stderr, "Failed to open %s (%s)\n", path,
+		strerror(errno));
+
+	return fd < 0 ? -errno : fd;
+}
+
+static void close_restricted(int fd, void *user_data)
+{
+	close(fd);
+}
+
+static const struct libinput_interface interface = {
+	.open_restricted = open_restricted,
+	.close_restricted = close_restricted
+};
+
+void handle_events(struct libinput *li)
+{
+	libinput_dispatch(li);
+	struct libinput_event *ev;
+	while ((ev = libinput_get_event(li))) {
+		switch (libinput_event_get_type(ev)) {
+		case LIBINPUT_EVENT_KEYBOARD_KEY:
+			printf("keypress\n");
+		default:
+			;
+		}
+	}
+}
+
 struct session_info_t *create_session_info() {
 	int ret = 0;
 
@@ -199,7 +238,12 @@ struct session_info_t *create_session_info() {
 	ret = sd_bus_message_read(msg, "o", &temp);
 	session_info->object = strdup(temp);
 	sd_bus_message_unref(msg);
-	
+
+	struct udev *udev = udev_new();
+	struct libinput *li = libinput_udev_create_context(&interface, 0, udev);
+	libinput_udev_assign_seat(li, "seat0");
+	int input_fd = libinput_get_fd(li);
+
 	return session_info;
 }
 
