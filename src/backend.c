@@ -27,8 +27,12 @@ struct _drm {
 	int n_bo;
 
 	uint32_t fb_id[2];
-	int n_fb_id;
+	int n_fb;
 };
+
+// GBM formats are either GBM_BO_FORMAT_XRGB8888 or GBM_BO_FORMAT_ARGB8888
+static const int COLOR_DEPTH = 24;
+static const int BIT_PER_PIXEL = 32;
 
 const char *conn_get_name(uint32_t type_id) {
 	switch (type_id) {
@@ -67,7 +71,7 @@ drm *drm_create()
 	drm *state = malloc(sizeof(drm));
 	state->fd = drmOpen("i915", 0);
 	state->n_bo = 0;
-	state->n_fb_id = 0;
+	state->n_fb = 0;
 	
 	drmModeRes *res;
 	uint32_t type;
@@ -169,57 +173,49 @@ int drm_pageflip(drm* state) {
 		state->n_bo--;
 		state->bo[0] = state->bo[1];
 	}
-
 	state->bo[state->n_bo] = gbm_surface_lock_front_buffer(state->surf);
 	if (state->bo[state->n_bo] == NULL) {
 		fprintf(stderr, "gbm_surface_lock_front_buffer failed\n");
 		return -1;
 	}
-	printf("gbm_surface_lock_front_buffer successful\n");
 	state->n_bo++;
-
-/*	uint32_t handles[4] = {gbm_bo_get_handle(state->bo).u32};
-	uint32_t pitches[4] = {gbm_bo_get_stride(Ri->bo)};
-	uint32_t offsets[4] = {gbm_bo_get_offset(Ri->bo, 0)};
-	uint32_t format = gbm_bo_get_format(Ri->bo);
-	ret = drmModeAddFB2(fd, width, height, format, handles, pitches, offsets,
-	&Di->fb_id, 0);*/
 
 	uint32_t width = gbm_bo_get_width(state->bo[state->n_bo-1]);
 	uint32_t height = gbm_bo_get_height(state->bo[state->n_bo-1]);
 	uint32_t stride = gbm_bo_get_stride(state->bo[state->n_bo-1]);
 	uint32_t handle = gbm_bo_get_handle(state->bo[state->n_bo-1]).u32;
 
-	if (state->n_fb_id == 2) {
+	if (state->n_fb == 2) {
 		drmModeRmFB(state->fd, state->fb_id[0]);
-		state->n_fb_id--;
+		state->n_fb--;
 		state->fb_id[0] = state->fb_id[1];
 	}
 
-	int ret = drmModeAddFB(state->fd, width, height, 24, 32, stride, handle,
-	&state->fb_id[state->n_fb_id]);
+	int ret = drmModeAddFB(state->fd, width, height, COLOR_DEPTH,
+	BIT_PER_PIXEL, stride, handle, &state->fb_id[state->n_fb]);
 	if (ret) {
 		printf("drmModeAddFB failed\n");
 	}
-	state->n_fb_id++;
+	state->n_fb++;
 	
-	if (state->n_fb_id == 1) {
+	if (state->n_fb == 1) {
+//		perform a SetCrtc if it's the first call
 		ret = drmModeSetCrtc(state->fd, state->crtc_id,
-		state->fb_id[state->n_fb_id-1], 0, 0, &state->connector_id, 1,
+		state->fb_id[state->n_fb-1], 0, 0, &state->connector_id, 1,
 		&state->mode);
 		if (ret) {
-			printf("drmModeSetCrtc failed\n");
+			fprintf(stderr, "drmModeSetCrtc failed\n");
 		}
-		printf("drmModeSetCrtc successful\n");
+		printf("\ndrmModeSetCrtc successful\n");
 	} else {
-		drmModePageFlip(state->fd, state->crtc_id, state->fb_id[state->n_fb_id-1],
-		DRM_MODE_PAGE_FLIP_EVENT, state);
+//		otherwise perform a PageFlip
+		drmModePageFlip(state->fd, state->crtc_id,
+		state->fb_id[state->n_fb-1], DRM_MODE_PAGE_FLIP_EVENT,
+		state);
 		if (ret) {
-			printf("drmModePageFlip failed\n");
+			fprintf(stderr, "drmModePageFlip failed\n");
 		}
 	}
-	
-	
 	return 0;
 }
 
@@ -238,21 +234,25 @@ int drm_handle_event(drm* state) {
 }
 
 int drm_destroy(drm *state) {
-	int ret = drmModeSetCrtc(state->fd, state->crtc_id, state->old_fb_id, 0, 0,
-	&state->connector_id, 1, &state->mode);
+	int ret = drmModeSetCrtc(state->fd, state->crtc_id, state->old_fb_id,
+	0, 0, &state->connector_id, 1, &state->mode);
 	if (ret) {
 		printf("drmModeSetCrtc failed\n");
 	}
-	printf("drmModeSetCrtc successful\n");
+	printf("\ndrmModeSetCrtc successful\n");
+	
+	if (state->n_fb == 2) {
+		drmModeRmFB(state->fd, state->fb_id[0]);
+		drmModeRmFB(state->fd, state->fb_id[1]);
+	} else if (state->n_fb == 1) {
+		drmModeRmFB(state->fd, state->fb_id[0]);
+	}
+	state->n_fb = 0;
 
-	drmModeRmFB(state->fd, state->fb_id[0]);
-	drmModeRmFB(state->fd, state->fb_id[1]);
-
-	gbm_surface_release_buffer(state->surf, state->bo[0]);
-	gbm_surface_release_buffer(state->surf, state->bo[1]);
-	state->n_bo = 0;
 	gbm_surface_destroy(state->surf);
+	printf("\ngbm_surface_destroy\n");
 	gbm_device_destroy(state->gbm);
+	printf("gbm_device_destroy\n");
 
 	free(state);
 	return 0;
