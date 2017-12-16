@@ -32,6 +32,12 @@ int input_get_fd(input *state);
 
 int input_handle_event(input *state);
 
+int input_get_keystate_left(input *state);
+int input_get_keystate_down(input *state);
+int input_get_keystate_right(input *state);
+int input_get_keystate_up(input *state);
+int input_get_keystate_esc(input *state);
+
 int input_destroy(input *state);
 
 #endif

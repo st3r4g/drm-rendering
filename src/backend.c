@@ -1,10 +1,15 @@
 #include <backend.h>
 
+#include <session.h>
+
 #include <errno.h> // errno
 #include <fcntl.h> // open
 #include <stdio.h> // printf
 #include <string.h> // strerror
 #include <unistd.h> // close
+
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 
 #include <libinput.h>
 
@@ -66,10 +71,50 @@ const char *conn_get_connection(drmModeConnection connection) {
 	}
 }
 
-drm *drm_create()
+void get_boot_gpu(int *major, int *minor) {
+	struct udev* udev = udev_new();
+	if (udev == NULL) {
+		fprintf(stderr, "udev_new failed");
+	}
+
+	struct udev_enumerate *udev_enum = udev_enumerate_new(udev);
+	if (udev_enum == NULL) {
+		fprintf(stderr, "udev_enumerate_new failed");
+	}
+
+	udev_enumerate_add_match_subsystem(udev_enum, "drm");
+	udev_enumerate_add_match_sysname(udev_enum, "card[0-9]");
+	udev_enumerate_scan_devices(udev_enum);
+
+	struct udev_list_entry *entry;
+	udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(udev_enum)) {
+		const char *syspath = udev_list_entry_get_name(entry);
+		struct udev_device *gpu = udev_device_new_from_syspath(udev, syspath);
+		printf("Found gpu: %s\n", udev_device_get_sysname(gpu)); 
+
+		struct udev_device *pci =
+		udev_device_get_parent_with_subsystem_devtype(gpu, "pci", NULL);
+
+		const char *boot = udev_device_get_sysattr_value(pci, "boot_vga");
+		if (strcmp(boot, "1") == 0) {
+			*major = atoi(udev_device_get_property_value(gpu, "MAJOR"));
+			*minor = atoi(udev_device_get_property_value(gpu, "MINOR"));
+			printf("using this gpu for rendering\n");
+			udev_device_unref(gpu);
+			break;
+		}
+		udev_device_unref(gpu);
+	}
+	udev_enumerate_unref(udev_enum);
+	udev_unref(udev);
+}
+
+drm *drm_create(session* session_state)
 {
 	drm *state = malloc(sizeof(drm));
-	state->fd = drmOpen("i915", 0);
+	int major, minor;
+	get_boot_gpu(&major, &minor);
+	state->fd = session_take_device(session_state, major, minor);
 	state->n_bo = 0;
 	state->n_fb = 0;
 	
@@ -262,11 +307,26 @@ int drm_destroy(drm *state) {
 
 struct _input {
 	struct libinput *li;
+	unsigned char keys;
 };
+
+const unsigned char KEY_LEFT = 0x1;
+const unsigned char KEY_DOWN = 0x2;
+const unsigned char KEY_RIGHT = 0x4;
+const unsigned char KEY_UP = 0x8;
+
+const unsigned char KEY_ESC = 0x80;
 
 static int open_restricted(const char *path, int flags, void *user_data)
 {
-	int fd = open(path, flags);
+	session *session_state = user_data;
+	struct stat st;
+	if (stat(path, &st) < 0) {
+		fprintf(stderr, "stat failed\n");
+	}
+	
+	int fd = session_take_device(session_state, major(st.st_rdev),
+	minor(st.st_rdev));
 
 	if (fd < 0)
 		fprintf(stderr, "Failed to open %s (%s)\n", path,
@@ -277,7 +337,14 @@ static int open_restricted(const char *path, int flags, void *user_data)
 
 static void close_restricted(int fd, void *user_data)
 {
-	close(fd);
+	session *session_state = user_data;
+	struct stat st;
+	if (fstat(fd, &st) < 0) {
+		fprintf(stderr, "fstat failed\n");
+	}
+
+	session_release_device(session_state, major(st.st_rdev),
+	minor(st.st_rdev));
 }
 
 static const struct libinput_interface interface = {
@@ -285,11 +352,12 @@ static const struct libinput_interface interface = {
 	.close_restricted = close_restricted
 };
 
-input *input_create() {
+input *input_create(session* session_state) {
 	input *state = malloc(sizeof(input));
+	state->keys = 0;
 
 	struct udev *udev = udev_new();
-	state->li = libinput_udev_create_context(&interface, 0, udev);
+	state->li = libinput_udev_create_context(&interface, session_state, udev);
 
 	libinput_udev_assign_seat(state->li, "seat0");
 
@@ -304,16 +372,54 @@ int input_handle_event(input *state)
 {
 	libinput_dispatch(state->li);
 	struct libinput_event *ev;
-	int ret = 0;
 	while ((ev = libinput_get_event(state->li))) {
+		struct libinput_event_keyboard *key_ev;
+		uint32_t keycode;
 		switch (libinput_event_get_type(ev)) {
 		case LIBINPUT_EVENT_KEYBOARD_KEY:
-			ret = 1;
+			key_ev = libinput_event_get_keyboard_event(ev);
+			keycode = libinput_event_keyboard_get_key(key_ev);
+			if (keycode == 105)
+				state->keys ^= KEY_LEFT;
+			if (keycode == 108)
+				state->keys ^= KEY_DOWN;
+			if (keycode == 106)
+				state->keys ^= KEY_RIGHT;
+			if (keycode == 103)
+				state->keys ^= KEY_UP;
+			if (keycode == 1)
+				state->keys ^= KEY_ESC;
+			break;
 		default:
 			;
 		}
 	}
-	return ret;
+	return 0;
+}
+
+int input_get_keystate_left(input *state)
+{
+	return (state->keys & KEY_LEFT);
+}
+
+int input_get_keystate_down(input *state)
+{
+	return (state->keys & KEY_DOWN) >> 1;
+}
+
+int input_get_keystate_right(input *state)
+{
+	return (state->keys & KEY_RIGHT) >> 2;
+}
+
+int input_get_keystate_up(input *state)
+{
+	return (state->keys & KEY_UP) >> 3;
+}
+
+int input_get_keystate_esc(input *state)
+{
+	return (state->keys & KEY_ESC) >> 7;
 }
 
 int input_destroy(input *state)

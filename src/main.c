@@ -2,15 +2,18 @@
 
 #include <backend.h>
 #include <renderer.h>
+#include <session.h>
 
 #include <stdio.h> //printf
 #include <stdlib.h>
 #include <sys/epoll.h> //epoll
-#include <time.h> //time
 
 int main() {
-	drm* drm_state = drm_create();
-	input* input_state = input_create();
+	session *session_state = session_create();
+	session_take_control(session_state);
+
+	drm* drm_state = drm_create(session_state);
+	input* input_state = input_create(session_state);
 
 	int gpu_fd = drm_get_fd(drm_state);
 	int input_fd = input_get_fd(input_state);
@@ -18,7 +21,7 @@ int main() {
 	renderer* renderer_state = renderer_create(drm_get_gbm(drm_state),
 	drm_get_surf(drm_state));
 
-	renderer_render(renderer_state, 0);
+	renderer_render(renderer_state, input_state);
 	drm_pageflip(drm_state);
 
 	int epfd = epoll_create(1);
@@ -37,11 +40,8 @@ int main() {
 	const int maxevents = 32;
 	events = malloc(maxevents*sizeof(*events));
 
-	renderer_render(renderer_state, 0);
+	renderer_render(renderer_state, input_state);
 	drm_pageflip(drm_state);
-
-	time_t start, cur;
-	time(&start);
 
 	for (;;) {
 		int n = epoll_wait(epfd, events, maxevents, -1);
@@ -50,10 +50,11 @@ int main() {
 			continue;
 		for (int i=0; i<n; i++) {
 			if (events[i].data.fd == input_fd) {
-				if (input_handle_event(input_state) == 1)
+				input_handle_event(input_state);
+				if (input_get_keystate_esc(input_state))
 					goto end;
 			} else if (events[i].data.fd == gpu_fd) {
-				renderer_render(renderer_state, 0);
+				renderer_render(renderer_state, input_state);
 				drm_handle_event(drm_state);
 			}
 		}
@@ -64,6 +65,9 @@ end:
 
 	input_destroy(input_state);
 	drm_destroy(drm_state);
+	
+	session_release_control(session_state);
+	session_destroy(session_state);
 
 	return EXIT_SUCCESS;
 }

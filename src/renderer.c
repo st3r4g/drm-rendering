@@ -1,5 +1,7 @@
 #include <renderer.h>
 
+#include <algebra.h>
+
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl32.h>
@@ -21,6 +23,9 @@ struct _renderer {
 	EGLSurface surf;
 
 	GLuint prog;
+
+	GLfloat theta_x;
+	GLfloat theta_y;
 };
 
 struct model {
@@ -31,14 +36,15 @@ struct model {
 const char *GetError(EGLint error_code);
 int CreateProgram(renderer *state);
 struct model MakeSphere(float r, int stacks, int slices);
-int DrawSphere(renderer* state, int secs);
+int DrawSphere(renderer* state);
 char *GetShaderSource(const char *src_file);
-void RotateX(GLfloat theta, GLfloat *matrix);
 
 // public definitions
 
 renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 	renderer *state = malloc(sizeof(renderer));
+	state->theta_x = 0.0f;
+	state->theta_y = 0.0f;
 
 	state->dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_MESA, gbm, NULL);
 	state->ctx = EGL_NO_CONTEXT;
@@ -98,7 +104,7 @@ renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 
 	CreateProgram(state);
 
-	sphere = MakeSphere(0.5, 50, 50);
+	sphere = MakeSphere(0.5, 1, 2);
 	
 	glGenVertexArrays(1, &triangle.vao);
 	GLuint vbo, ebo;
@@ -122,10 +128,41 @@ renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 	return state;
 }
 
-int renderer_render(renderer* state, int secs) {
+void DecreaseAngle(GLfloat *angle)
+{
+	*angle -= M_PI/64;
+	if (*angle < -M_PI)
+		*angle += 2*M_PI;
+}
+
+
+void IncreaseAngle(GLfloat *angle)
+{
+	*angle += M_PI/64;
+	if (*angle > M_PI)
+		*angle -= 2*M_PI;
+}
+
+int renderer_render(renderer* state, input* input_state) {
 	glClear(GL_COLOR_BUFFER_BIT);
 	
-	DrawSphere(state, secs);
+	glUseProgram(state->prog);
+	if (input_get_keystate_down(input_state))
+		DecreaseAngle(&state->theta_x);
+	if (input_get_keystate_up(input_state))
+		IncreaseAngle(&state->theta_x);
+	if (input_get_keystate_left(input_state))
+		DecreaseAngle(&state->theta_y);
+	if (input_get_keystate_right(input_state))
+		IncreaseAngle(&state->theta_y);
+		
+	GLfloat rotx[9], roty[9], rot[9];
+	algebra_matrix_rotation_x(rotx, state->theta_x);
+	algebra_matrix_rotation_y(roty, state->theta_y);
+	algebra_matrix_multiply(rot, rotx, roty);
+	glUniformMatrix3fv(1, 1, GL_TRUE, rot);
+	
+	DrawSphere(state);
 	
 	if (eglSwapBuffers(state->dpy, state->surf) == EGL_FALSE) {
 		fprintf(stderr, "eglSwapBuffers failed\n");
@@ -271,14 +308,10 @@ struct model MakeSphere(float r, int stacks, int slices)
 	return sphere;
 }
 
-int DrawSphere(renderer* state, int secs)
+int DrawSphere(renderer* state)
 {
-	glUseProgram(state->prog);
-	GLfloat rot[9];
-	RotateX(M_PI/8*secs, rot);
-	glUniformMatrix3fv(1, 1, GL_TRUE, rot);
-	glBindVertexArray(sphere.vao);
-	glDrawElements(GL_TRIANGLES, sphere.n_elem, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(triangle.vao);
+	glDrawElements(GL_TRIANGLES, triangle.n_elem, GL_UNSIGNED_INT, 0);
 	glBindVertexArray(0);
 	return 0;
 }
@@ -309,12 +342,7 @@ char *GetShaderSource(const char *src_file)
 	return buffer;
 }
 
-void RotateX(GLfloat theta, GLfloat *matrix)
-{
-	matrix[0] = 1.0f, matrix[1] = 0.0f, matrix[2] = 0.0f;
-	matrix[3] = 0.0f, matrix[4] = cos(theta), matrix[5] = -sin(theta);
-	matrix[6] = 0.0f, matrix[7] = sin(theta), matrix[8] = cos(theta);
-}
+
 
 const char *GetError(EGLint error_code) {
 	switch (error_code) {
