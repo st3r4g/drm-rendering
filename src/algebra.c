@@ -20,6 +20,14 @@ void algebra_matrix_rotation_y(float *m, float theta)
 	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
 }
 
+void algebra_matrix_traslation(float *m, float x, float y, float z)
+{
+	m[0]=1.0f, m[1]=0.0f, m[2]=0.0f, m[3]=x;
+	m[4]=0.0f, m[5]=1.0f, m[6]=0.0f, m[7]=y;
+	m[8]=0.0f, m[9]=0.0f, m[10]=1.0f, m[11]=z;
+	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
+}
+
 void algebra_matrix_multiply(float *product, float *a, float *b)
 {
 	for (int i=0; i<16; i++)
@@ -36,4 +44,13 @@ float top, float near, float far) {
 	m[4]=0.0f, m[5]=2/(top-bottom), m[6]=0.0f, m[7]=-(top+bottom)/(top-bottom);
 	m[8]=0.0f, m[9]=0.0f, m[10]=2/(far-near), m[11]=-(far+near)/(far-near);
 	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
+}
+
+void algebra_matrix_persp(float *m, float fov, float ratio, float n, float f) {
+	float t = n*tanf(fov/2); //t=h/2
+	float r = t*ratio; //r=w/2
+	m[0]=n/r, m[1]=0.0f, m[2]=0.0f, m[3]=0.0f;
+	m[4]=0.0f, m[5]=n/t, m[6]=0.0f, m[7]=0.0f;
+	m[8]=0.0f, m[9]=0.0f, m[10]=-(f+n)/(f-n), m[11]=-2*f*n/(f-n);
+	m[12]=0.0f, m[13]=0.0f, m[14]=-1.0f, m[15]=0.0f;
 }

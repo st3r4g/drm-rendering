@@ -38,6 +38,9 @@ int input_get_keystate_right(input *state);
 int input_get_keystate_up(input *state);
 int input_get_keystate_esc(input *state);
 
+double input_get_yaw(input *state);
+double input_get_pitch(input *state);
+
 int input_destroy(input *state);
 
 #endif

@@ -26,6 +26,12 @@ struct model {
 	GLint n_elem;
 };
 
+struct camera {
+	GLfloat x;
+	GLfloat z;
+	GLfloat theta_x;
+	GLfloat theta_y;
+};
 
 struct _renderer {
 	EGLDisplay dpy;
@@ -34,9 +40,7 @@ struct _renderer {
 
 	GLuint prog[3];
 	struct model model[3];
-
-	GLfloat theta_x;
-	GLfloat theta_y;
+	struct camera camera;
 };
 
 const char *GetError(EGLint error_code);
@@ -52,8 +56,10 @@ char *GetShaderSource(const char *src_file);
 
 renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 	renderer *state = malloc(sizeof(renderer));
-	state->theta_x = 0.0f;
-	state->theta_y = 0.0f;
+	state->camera.x = 0.0f;
+	state->camera.z = 0.0f;
+	state->camera.theta_x = 0.0f;
+	state->camera.theta_y = M_PI;
 
 	state->dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_MESA, gbm, NULL);
 	state->ctx = EGL_NO_CONTEXT;
@@ -121,7 +127,7 @@ renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 
 	state->model[0] = MakeAxes(1.0f);
 	state->model[0].prog = state->prog[0];
-	state->model[1] = MakeTerrain(0.5f, 20);
+	state->model[1] = MakeTerrain(1.0f, 10);
 	state->model[1].prog = state->prog[2];
 
 	glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
@@ -135,7 +141,6 @@ void DecreaseAngle(GLfloat *angle)
 		*angle += 2*M_PI;
 }
 
-
 void IncreaseAngle(GLfloat *angle)
 {
 	*angle += M_PI/64;
@@ -147,21 +152,28 @@ int renderer_render(renderer* state, input* input_state) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	
 	if (input_get_keystate_down(input_state))
-		DecreaseAngle(&state->theta_x);
+		DecreaseAngle(&state->camera.theta_x);
 	if (input_get_keystate_up(input_state))
-		IncreaseAngle(&state->theta_x);
+		IncreaseAngle(&state->camera.theta_x);
 	if (input_get_keystate_left(input_state))
-		DecreaseAngle(&state->theta_y);
+		DecreaseAngle(&state->camera.theta_y);
 	if (input_get_keystate_right(input_state))
-		IncreaseAngle(&state->theta_y);
-		
-	GLfloat rotx[16], roty[16], view[16], ortho[16], projection[16];
-	algebra_matrix_rotation_x(rotx, state->theta_x);
-	algebra_matrix_rotation_y(roty, state->theta_y);
-	algebra_matrix_multiply(view, rotx, roty);
-	algebra_matrix_ortho(ortho, -1.78f, 1.78f, -1.0f, 2.0f, -0.1f,
-	1.0f*4);
-	algebra_matrix_multiply(projection, ortho, view);
+		IncreaseAngle(&state->camera.theta_y);
+
+	double yaw = input_get_yaw(input_state);	
+	double pitch = input_get_pitch(input_state);
+
+	GLfloat rotx[16], roty[16], trasl[16], view[16], persp[16], projection[16];
+	algebra_matrix_rotation_x(rotx, pitch);
+	algebra_matrix_rotation_y(roty, yaw);
+	algebra_matrix_traslation(trasl, -state->camera.x, -2.0f,
+	-state->camera.z);
+	GLfloat temp[16];
+	algebra_matrix_multiply(temp, rotx, roty);
+	GLfloat temp2[16];
+	algebra_matrix_multiply(temp2, trasl, temp);
+	algebra_matrix_persp(persp, M_PI/4, 1.7786f, 0.1f, 100.0f);
+	algebra_matrix_multiply(projection, persp, temp2);
 	
 	for (int i=0; i<2; i++)
 		DrawModel(state, &state->model[i], projection);
