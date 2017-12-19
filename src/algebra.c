@@ -3,24 +3,37 @@
 #include <stdio.h>
 #include <math.h>
 
-void algebra_matrix_rotation_x(float *matrix, float theta)
+void algebra_matrix_rotation_x(float *m, float theta)
 {
-	matrix[0] = 1.0f, matrix[1] = 0.0f, matrix[2] = 0.0f;
-	matrix[3] = 0.0f, matrix[4] = cos(theta), matrix[5] = -sin(theta);
-	matrix[6] = 0.0f, matrix[7] = sin(theta), matrix[8] = cos(theta);
+	m[0]=1.0f, m[1]=0.0f, m[2]=0.0f, m[3]=0.0f;
+	m[4]=0.0f, m[5]=cos(theta), m[6]=-sin(theta), m[7]=0.0f;
+	m[8]=0.0f, m[9]=sin(theta), m[10]=cos(theta), m[11]=0.0f;
+	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
 }
 
 
-void algebra_matrix_rotation_y(float *matrix, float theta)
+void algebra_matrix_rotation_y(float *m, float theta)
 {
-	matrix[0] = cos(theta), matrix[1] = 0.0f, matrix[2] = -sin(theta);
-	matrix[3] = 0.0f, matrix[4] = 1.0f, matrix[5] = 0.0f;
-	matrix[6] = sin(theta), matrix[7] = 0.0f, matrix[8] = cos(theta);
+	m[0]=cos(theta), m[1]=0.0f, m[2]=-sin(theta), m[3]=0.0f;
+	m[4]=0.0f, m[5]=1.0f, m[6]=0.0f, m[7]=0.0f;
+	m[8]=sin(theta), m[9]=0.0f, m[10]=cos(theta), m[11]=0.0f;
+	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
 }
 
 void algebra_matrix_multiply(float *product, float *a, float *b)
 {
-	for (int i=0; i<9; i++)
-		product[i] =
-		a[i/3*3]*b[i%3]+a[i/3*3+1]*b[i%3+3]+a[i/3*3+2]*b[i%3+6];
+	for (int i=0; i<16; i++)
+		product[i]=a[i/4*4]*b[i%4]+a[i/4*4+1]*b[i%4+4]+
+		a[i/4*4+2]*b[i%4+8]+a[i/4*4+3]*b[i%4+12];
+}
+
+// Projection matrices define a way to project a given region of view space
+// onto a plane.
+
+void algebra_matrix_ortho(float *m, float left, float right, float bottom,
+float top, float near, float far) {
+	m[0]=2/(right-left), m[1]=0.0f, m[2]=0.0f, m[3]=-(right+left)/(right-left);
+	m[4]=0.0f, m[5]=2/(top-bottom), m[6]=0.0f, m[7]=-(top+bottom)/(top-bottom);
+	m[8]=0.0f, m[9]=0.0f, m[10]=2/(far-near), m[11]=-(far+near)/(far-near);
+	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
 }

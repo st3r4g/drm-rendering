@@ -19,9 +19,12 @@ $(ODIR)/%.o: $(SDIR)/%.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS) -I/usr/include/libdrm
 
 main: $(OBJ)
-	$(CC) -o $@ $^ -lm -ludev -linput -lsystemd -ldrm -lgbm -lEGL -lGLESv2
+	$(CC) -o $@ $^ $(ODIR)/stb_image.o -lm -ludev -linput -lsystemd -ldrm -lgbm -lEGL -lGLESv2
 
 .PHONY: clean
 
 clean:
 	rm main $(ODIR)/*.o
+
+stb_image:
+	$(CC) -c -o $(ODIR)/stb_image.o $(SDIR)/stb_image.c -I$(IDIR)
