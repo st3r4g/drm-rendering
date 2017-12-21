@@ -14,9 +14,9 @@ void algebra_matrix_rotation_x(float *m, float theta)
 
 void algebra_matrix_rotation_y(float *m, float theta)
 {
-	m[0]=cos(theta), m[1]=0.0f, m[2]=-sin(theta), m[3]=0.0f;
+	m[0]=cos(theta), m[1]=0.0f, m[2]=sin(theta), m[3]=0.0f;
 	m[4]=0.0f, m[5]=1.0f, m[6]=0.0f, m[7]=0.0f;
-	m[8]=sin(theta), m[9]=0.0f, m[10]=cos(theta), m[11]=0.0f;
+	m[8]=-sin(theta), m[9]=0.0f, m[10]=cos(theta), m[11]=0.0f;
 	m[12]=0.0f, m[13]=0.0f, m[14]=0.0f, m[15]=1.0f;
 }
 

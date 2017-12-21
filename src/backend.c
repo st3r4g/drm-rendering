@@ -308,8 +308,8 @@ int drm_destroy(drm *state) {
 struct _input {
 	struct libinput *li;
 	unsigned char keys;
-	double yaw;
-	double pitch;
+	double dx;
+	double dy;
 };
 
 const unsigned char KEY_LEFT = 0x1;
@@ -318,8 +318,6 @@ const unsigned char KEY_RIGHT = 0x4;
 const unsigned char KEY_UP = 0x8;
 
 const unsigned char KEY_ESC = 0x80;
-
-const double k = 0.001;
 
 static int open_restricted(const char *path, int flags, void *user_data)
 {
@@ -359,8 +357,8 @@ static const struct libinput_interface interface = {
 input *input_create(session* session_state) {
 	input *state = malloc(sizeof(input));
 	state->keys = 0;
-	state->yaw = 0.0;
-	state->pitch = 0.0;
+	state->dx = 0.0;
+	state->dy = 0.0;
 
 	struct udev *udev = udev_new();
 	state->li = libinput_udev_create_context(&interface, session_state, udev);
@@ -399,8 +397,8 @@ int input_handle_event(input *state)
 			break;
 		case LIBINPUT_EVENT_POINTER_MOTION:
 			pointer_ev = libinput_event_get_pointer_event(ev);
-			state->yaw += k*libinput_event_pointer_get_dx(pointer_ev);
-			state->pitch += k*libinput_event_pointer_get_dy(pointer_ev);
+			state->dx += libinput_event_pointer_get_dx(pointer_ev);
+			state->dy += libinput_event_pointer_get_dy(pointer_ev);
 		default:
 			;
 		}
@@ -433,14 +431,19 @@ int input_get_keystate_esc(input *state)
 	return (state->keys & KEY_ESC) >> 7;
 }
 
-double input_get_yaw(input *state)
+double input_get_dx(input *state)
 {
-	return state->yaw;
+	return state->dx;
 }
 
-double input_get_pitch(input *state)
+double input_get_dy(input *state)
 {
-	return state->pitch;
+	return state->dy;
+}
+
+void input_reset_dxdy(input *state)
+{
+	state->dx = state->dy = 0.0;
 }
 
 int input_destroy(input *state)

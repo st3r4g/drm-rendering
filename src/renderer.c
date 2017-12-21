@@ -29,8 +29,8 @@ struct model {
 struct camera {
 	GLfloat x;
 	GLfloat z;
-	GLfloat theta_x;
-	GLfloat theta_y;
+	GLfloat pitch;
+	GLfloat yaw;
 };
 
 struct _renderer {
@@ -58,8 +58,8 @@ renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 	renderer *state = malloc(sizeof(renderer));
 	state->camera.x = 0.0f;
 	state->camera.z = 0.0f;
-	state->camera.theta_x = 0.0f;
-	state->camera.theta_y = M_PI;
+	state->camera.pitch = 0.0f;
+	state->camera.yaw = 3*M_PI/4;
 
 	state->dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_MESA, gbm, NULL);
 	state->ctx = EGL_NO_CONTEXT;
@@ -136,14 +136,14 @@ renderer *renderer_create(struct gbm_device *gbm, struct gbm_surface *surf) {
 
 void DecreaseAngle(GLfloat *angle)
 {
-	*angle -= M_PI/64;
+	*angle -= M_PI/128;
 	if (*angle < -M_PI)
 		*angle += 2*M_PI;
 }
 
 void IncreaseAngle(GLfloat *angle)
 {
-	*angle += M_PI/64;
+	*angle += M_PI/128;
 	if (*angle > M_PI)
 		*angle -= 2*M_PI;
 }
@@ -152,20 +152,21 @@ int renderer_render(renderer* state, input* input_state) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	
 	if (input_get_keystate_down(input_state))
-		DecreaseAngle(&state->camera.theta_x);
+		DecreaseAngle(&state->camera.pitch);
 	if (input_get_keystate_up(input_state))
-		IncreaseAngle(&state->camera.theta_x);
+		IncreaseAngle(&state->camera.pitch);
 	if (input_get_keystate_left(input_state))
-		DecreaseAngle(&state->camera.theta_y);
+		DecreaseAngle(&state->camera.yaw);
 	if (input_get_keystate_right(input_state))
-		IncreaseAngle(&state->camera.theta_y);
+		IncreaseAngle(&state->camera.yaw);
 
-	double yaw = input_get_yaw(input_state);	
-	double pitch = input_get_pitch(input_state);
+	state->camera.yaw -= 0.001*input_get_dx(input_state);
+	state->camera.pitch -= 0.001*input_get_dy(input_state);
+	input_reset_dxdy(input_state);
 
 	GLfloat rotx[16], roty[16], trasl[16], view[16], persp[16], projection[16];
-	algebra_matrix_rotation_x(rotx, pitch);
-	algebra_matrix_rotation_y(roty, yaw);
+	algebra_matrix_rotation_x(rotx, state->camera.pitch);
+	algebra_matrix_rotation_y(roty, state->camera.yaw);
 	algebra_matrix_traslation(trasl, -state->camera.x, -2.0f,
 	-state->camera.z);
 	GLfloat temp[16];

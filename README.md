@@ -1,4 +1,4 @@
-# KMS Rendering
+# DRM Rendering
 
 * libsystemd (logind session management)
 * libudev (device information)
